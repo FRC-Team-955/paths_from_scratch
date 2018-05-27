@@ -1,6 +1,7 @@
 \documentclass[12pt, english]{article}
 \usepackage{listings}
 \usepackage{tikz}
+\usetikzlibrary{fit,calc,positioning,decorations.pathreplacing,matrix}
 \usepackage[most]{tcolorbox}
 \usepackage[ampersand]{easylist}
 \usetikzlibrary{calc}
@@ -60,7 +61,7 @@ Because we need such precise control, the Talon SRX (or it's derivatives) is a f
 \end{table}
 
 \par
-In conclusion: We want motion profile data, and we're going to create it in real time using splines.
+In conclusion: We need motion profile data, and we're going to create it in real time using splines.
 
 %Typical motion profile buffer:
 %Two tables side by side, left and right motors with time in one column and vel in the other, cut off jagged at the bottom because there are more points
@@ -205,7 +206,7 @@ It's somewhat uglier, but it's derivable. And when we do derive the expression, 
 Now that we know how to create the curve and it's derivatives, it's time to create the path(s).
 
 
-\section{Path planning for \textit{any} parametric}
+\section{Tank drive for \textit{any} parametric}
 
 For this section, we will assume that the spline has been defined using 2 dimensional control points, and that $\frac{dx}{dk}$, $\frac{dy}{dk}$ are represented as $x'$ and $y'$.
 
@@ -237,7 +238,7 @@ For this section, we will assume that the spline has been defined using 2 dimens
 
 As shown in the diagram above, the spline defines where the \textit{center} of the robot will be. Our end goal is to find the rotational velocity of the individual wheels, so we need to figure out the position of each. $w$ represents the distance from the center of the robot to each of the wheel wells that define our physical robot.
 \par
-To find the position of a wheel at index $k$ along the spline, we need to find the perpendicular unit vector to our current motion $(x', y')$. Mulitplying it by $\pm w$ and adding it to position $J$ gives us the actual position of each wheel.
+To find the position of a wheel at index $k$ along the spline, we first need to find the perpendicular unit vector to our current motion:
 
 \[
 	\begin{bmatrix}
@@ -266,7 +267,7 @@ We then normalize the point by dividing it by the length of the original vector:
 \noindent
 Adding the vector to the position along the curve gives us the final position of the wheel:
 \[
-	\{x(k), y(k)\} \pm d \left(\frac{\{-y'(k), x'(k)\}}{\sqrt{x'(k)^2+y'(k)^2}}\right)
+	\{x(k), y(k)\} \pm w \left(\frac{\{-y'(k), x'(k)\}}{\sqrt{x'(k)^2+y'(k)^2}}\right)
 \]
 
 \noindent
@@ -275,35 +276,85 @@ Note: Either adding or subtracting  the vector to the position gives us two dist
 \subsection{Wheel velocities}
 To find the velocity of each wheel, we can derive the position of each like so:
 \[
-	\{x'(k), y'(k)\} \pm d\frac{\{-y''(k), x''(k)\}*\sqrt{x'(k)^2+y'(k)^2} - \{-y'(k), x'(k)\} * \frac{y''(k)y'(k) + x''(k)x'(k)}{\sqrt{x'(k)^2+y'(k)^2}}}{x'(k)^2+y'(k)^2}
+	\{x'(k), y'(k)\} \pm w\frac{\{-y''(k), x''(k)\}*\sqrt{x'(k)^2+y'(k)^2} - \{-y'(k), x'(k)\} * \frac{y''(k)y'(k) + x''(k)x'(k)}{\sqrt{x'(k)^2+y'(k)^2}}}{x'(k)^2+y'(k)^2}
 \]
+
+% TODO: Add an eq here
 
 \subsection{Reversing}
-Because the rate of change in velocity must be positive for each motor, we have no intrinsic way of knowing if a given wheel should be in reverse to compensate for a tight corner. Luckily, there is a solution; we can find the rate of change in angle of center line, and measure if it's above/below $2\pi$. This works because if the rate of change is above $2\pi$ we're making a turn sharper than if one motor was at 100\% and the other at 0\%. We can find the derivate of the change in angle like so:
-\[
-	\label{change_in_angle}
-	\frac{d}{dk} 
-	\tan^{-1}{\left(\frac{y'(k)}{x'(k)}\right)} = 
-	\frac{1}{1 + \left(\frac{y'(k)}{x'(k)}\right)^2} * \frac{y''(k)x'(k) - x''(k)y'(k)}{x'(k)^2}
-\]
+Because the rate of change in velocity must be positive for each motor, we have no inherent way of knowing if a given wheel should be moving in reverse to compensate for a tight corner. Luckily, there is a solution; we can look at the \textit{direction} each wheel is moving relative to the rest of the robot.
+\par
+We can utilize the dot product to project our wheel motion vectors onto our robot motion vector, and measure the length of the projection. If the projected length is $ < 0 $, the wheel is moving in reverse relative to the center of the robot.
 
+\begin{center}
+	\scalebox{1.5}{%
+		\begin{tikzpicture}
+			\draw[step=1.0,gray,very thin] (-2.0,-2.0) grid (2.0,2.0);
+			\draw[color=blue!50] (-2, -2) .. controls (5, 0.65) and (-5, 0.65) .. (2, -2);
+			\draw (-0.75, -0.75) -- (-0.75, 0.75) -- (0.75, 0.75) -- (0.75, -0.75) -- cycle;
+			\node[circle,fill,inner sep=1pt] at (0,0);
+
+			\draw[arrows=->] (-1.25,0.0) -- (1.25, 0.0);
+
+			\coordinate (TipLeft) at (0.45, 0.65);
+			\draw[arrows=->] (0.0,0.65) -- (TipLeft);
+			\draw[dashed] (0.45,0.0) -- (TipLeft);
+
+			\coordinate (TipRight) at (-0.45,-0.65);
+			\draw[arrows=->] (0.0, -0.65) -- (TipRight);
+			\draw[dashed] (-0.45,0.0) -- (TipRight);
+
+			\draw[decoration={brace,raise=3pt}, decorate,line width=0.75pt] 
+				(-0.45,0) -- (0, 0) node[midway, above, yshift=0.20cm, scale=0.5] {$<0$};
+
+		\end{tikzpicture}
+	}
+\end{center}
+
+Note how the direction of the wheel well at the top (left) of the robot is travelling forwards, while the direction of the wheel well on the bottom (right) is travelling in reverse.
 
 \subsection{Incrementing over spline indices}
-To approximate how far along the spline we should move (in index units $k$) to reach our next time point, we first need to find the distance we predict we will travel for $j$ units of change; this can be acquired with the lengths of the velocity vectors for both wheels, selecting the largest one to make sure that no wheel goes faster than the max velocity. This gives us $\frac{dr}{dk}$. We specify what $\frac{dr}{dt}$ is in code, manually, as well as dt. \\
+To approximate how far along the spline we should move (in index units $k$) to reach our next time point, we first need to find the distance we predict we will travel for $k$ units of change; this can be acquired with the magitudes of the velocity vectors for both wheels, selecting the largest one to make sure that no wheel goes faster than the max velocity. This gives us $\frac{dr}{dk}$. We already know what $\frac{dr}{dt}$ we want (you can use the 3rd dimension of the spline for this), as well as what dt we want. \\
 \\
 \noindent
-Where r = position, t = time, and j is an index in the spline:
+Where r = position, t = time, and k is an index in the spline:
 
-\noindent
-\begin{math}
-	\frac{dr}{dk} = 
-	\text{Largest velocity of the two sides over } dk\\
-	\\
-	\frac{dr}{dt} = \text{Maximum velocity we allow} \\
-	\\
-	\left(\frac{dr}{dk}\right)^{-1} * \frac{dr}{dt} = \frac{dk}{dt} \\
-	\\
-	\frac{dk}{dt} * dt = dk \text{ required}
-\end{math}
+$\frac{dr}{dk}$ = Largest velocity of the two sides over $dk$ \\
+
+$\frac{dr}{dt}$ = Maximum velocity we allow \\
+
+$\frac{dr}{dt} \left(\frac{dr}{dk}\right)^{-1} = \frac{dk}{dt}$ \\
+
+$\frac{dk}{dt}dt = dk$ \\
+
+So, with all of this in mind, we can obtain $dr$ for either wheel, and step $dk$ units along the spline to obtain a table of motor velocities with discrete time steps just like our goal!:
+
+\begin{table}[h!]
+	\begin{center}
+		\begin{tabular}{ | c | c | }
+			\hline
+			$t$ & $V_{\text{left}}$ \\
+			\hline
+			\hline
+			0 & 2.3 \\
+			1 & 2.1 \\
+			2 & 2.9 \\
+			3 & 3.4 \\
+		\end{tabular}
+		\quad
+		\begin{tabular}{ | c | c | }
+			\hline
+			$t$ & $V_{\text{right}}$ \\
+			\hline
+			\hline
+			0 & -1.9 \\
+			1 & -2.1 \\
+			2 & -2.9 \\
+			3 & -1.9 \\
+		\end{tabular}
+		\caption{Motion profile example data}
+	\end{center}
+\end{table}
+
 
 \end{document}
