@@ -143,7 +143,7 @@ Let's start with a simple spline with only 3 control points (The simplest spline
 In summary: \\
 Go $k$ interval from $A$ to $B$ and call the point $D$. Go $k$ interval from $B$ to $C$ and call that point $E$. Do the same for $D$ and $E$ and call it $F$. As we increase $k$ from 0 to 1, $F$ moves along our spline (marked in blue). \\
 \par
-3 control points is fine for some cases, but we want to be able to connect two splines end-to-end to easily form a larger spline with $C_1$ continuity (Meaning that there are no sudden turns that have to be handled individually. We can write a cubic spline with 4 control points like so:
+3 control points is fine for some cases, but we want to be able to connect two splines end-to-end to easily form a larger spline with $C_1$ continuity (Meaning that there are no sudden turns that have to be handled individually). We can write a cubic spline with 4 control points like so:
 \begin{center}
 	\begin{tikzpicture}
 		\coordinate (A) at ( 0, 0);
